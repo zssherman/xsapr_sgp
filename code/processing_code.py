@@ -21,6 +21,39 @@ import time
 from csu_radartools import csu_kdp
 from scipy import ndimage, signal, integrate, interpolate
 
+# Convolution code written by Bobby Jackson. Found at:
+# https://github.com/rcjackson/cmdv-rrm-anl/blob/cpol/notebooks/Texture-
+#Convolution.ipynb
+# Use convolutions to calculate angular texture.
+# Much faster,
+def std_convoluted_radar(image, N, interval):
+    # transform distribution from original interval to [-pi, pi]
+    interval_max = interval[1]
+    interval_min = interval[0]
+    half_width = (interval_max - interval_min) / 2.
+    center = interval_min + half_width
+
+    # Calculate parameters needed for angular std. dev
+    a = (np.asarray(image) - center) / (half_width) * np.pi
+    im = a
+    x = np.cos(im)
+    y = np.sin(im)
+
+    ones = np.ones(x.shape)
+
+    # Calculate convolution
+    kernel = np.ones((N, N))
+    xs = signal.convolve2d(x, kernel, mode="same")
+    ys = signal.convolve2d(y, kernel, mode="same")
+    ns = signal.convolve2d(ones, kernel, mode="same")
+
+    # Calculate norm over specified window.
+    xmean = xs/ns
+    ymean = ys/ns
+    norm = np.sqrt(xmean**2 + ymean**2)
+    std_dev = np.sqrt(-2 * np.log(norm)) * (half_width) / np.pi
+    return ndimage.filters.median_filter(std_dev, size=(N, N))
+
 
 def snr_and_sounding(radar, soundings_dir, override_file=None):
     if override_file is None:
@@ -52,17 +85,19 @@ def snr_and_sounding(radar, soundings_dir, override_file=None):
     return z_dict, temp_dict, snr
 
 
-def get_texture(radar):
-    nyq = radar.instrument_parameters['nyquist_velocity']['data'][0]
+# Has been changed to include convolution method instead.
+def get_texture(radar, nyq=None):
+    if nyq is None:
+        nyq = radar.instrument_parameters['nyquist_velocity']['data'][0]
+    else:
+        nyq = nyq
     start_time = time.time()
-    data = ndimage.filters.generic_filter(radar.fields['velocity']['data'],
-                                          pyart.util.interval_std, size=(4, 4),
-                                          extra_arguments=(-nyq, nyq))
-    total_time = time.time() - start_time
-    print(total_time)
-    filtered_data = ndimage.filters.median_filter(data, size=(4, 4))
+    filtered_data = std_convoluted_radar(radar.fields['velocity']['data'], 
+                                         4, (-nyq, nyq))
     texture_field = pyart.config.get_metadata('velocity')
     texture_field['data'] = filtered_data
+    total_time = time.time() - start_time
+    print(total_time)
     return texture_field
 
 
