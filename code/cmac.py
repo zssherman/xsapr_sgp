@@ -36,6 +36,10 @@ def cmac(radar_file, sounde_file, alt=320.0, write_radar=False,
     write_grid : bool
         Whether or not to write the grid object with added CMAC fields
         and CMAC corrections to netCDF. Default is True.
+    filename_radar : str
+        Filename to create for radar.
+    filename_grid : str
+        Filename to create for grid.
 
     Returns
     -------
@@ -67,7 +71,7 @@ def cmac(radar_file, sounde_file, alt=320.0, write_radar=False,
     radar.add_field('velocity_texture', texture, replace_existing=True)
     print(radar.fields.keys())
 
-    my_fuzz, cats = processing_code.do_my_fuzz(radar, **kwargs)
+    my_fuzz, cats = processing_code.do_my_fuzz(radar)
     print(my_fuzz['notes'])
     radar.add_field('gate_id', my_fuzz, 
                     replace_existing=True)
@@ -79,14 +83,7 @@ def cmac(radar_file, sounde_file, alt=320.0, write_radar=False,
         cat_dict.update(
             {pair_str.split(':')[1]:int(pair_str.split(':')[0])})
 
-    sorted_cats = sorted(cat_dict.items(), key=operator.itemgetter(1))
-
-    print(radar.fields['gate_id']['notes'])
-    cat_dict = {}
-    for pair_str in radar.fields['gate_id']['notes'].split(','):
-        print(pair_str)
-        cat_dict.update(
-            {pair_str.split(':')[1]:int(pair_str.split(':')[0])})
+    # sorted_cats = sorted(cat_dict.items(), key=operator.itemgetter(1))
 
     happy_gates = pyart.correct.GateFilter(radar)
     happy_gates.exclude_all()
@@ -99,9 +96,9 @@ def cmac(radar_file, sounde_file, alt=320.0, write_radar=False,
         grid_limits=((0, 15000.0), (-50000, 50000), (-50000, 50000)),
         fields=list(radar.fields.keys()), gridding_algo="map_gates_to_grid",
         weighting_function='BARNES', gatefilters=(happy_gates, ),
-        min_radius=200.0, **kwargs)
+        min_radius=200.0, )
 
     if write_radar:
-        pyart.io.write_cfradial(out_file_radar, radar)
+        pyart.io.write_cfradial(filename_radar, radar)
     if write_grid:
-        pyart.io.write_grid(out_file_grid, grid)
+        pyart.io.write_grid(filename_grid, grid)
