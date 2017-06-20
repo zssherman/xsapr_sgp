@@ -2,34 +2,34 @@
 """" Code that uses CMAC to remove and correct second trip returns. """
 
 
-import netCDF4
-import numpy as np
+# from boto.s3.connection import S3Connection
+from datetime import datetime
 import operator
+import netCDF4
 import pyart
 
-from boto.s3.connection import S3Connection
-from datetime import datetime
-
-import processing_code
+from . import processing_code
 
 
 def cmac(radar_file, sounde_file, alt=320.0, write_radar=False,
-         write_grid=True, **kwargs):
+         filename_radar=None, write_grid=True, filename_grid=None,
+         **kwargs):
     """
     Corrected Moments in Antenna Coordinates
 
     Parameters
     ----------
     radar_file : str
-        Filename and location of radar file to do CMAC calculations on. Radar
-        object is also used to add new CMAC fields to, such as gate_id.
+        Filename and location of radar file to do CMAC calculations on.
+        Radar  object is also used to add new CMAC fields to, such as
+        gate_id.
     sound_file : str
         Filename and location of sounde file to use for CMAC calculation.
 
     Other Parameters
     ----------------
     alt : float
-        Value to use as default altitude for the radar object. 
+        Value to use as default altitude for the radar object.
     write_radar : bool
         Whether or not to write the radar object with added CMAC fields
         to netCDF. Default is False.
@@ -43,8 +43,13 @@ def cmac(radar_file, sounde_file, alt=320.0, write_radar=False,
 
     Returns
     -------
+    radar : Radar
+        Radar object with new CMAC added fields.
+    grid : Grid
+        Grid object with new CMAC added fields.
 
     """
+
     # radar, sndfile, altitude,
     radar = pyart.io.read(radar_file)
     radar.altitude['data'][0] = alt
@@ -56,12 +61,12 @@ def cmac(radar_file, sounde_file, alt=320.0, write_radar=False,
     hms_string = datetime.strftime(radar_start_date, '%H%M%S')
     print(ymd_string, hms_string)
 
-    sonde = netCDF4.Dataset(sndfile)
+    sonde = netCDF4.Dataset(sounde_file)
     print(sonde.variables.keys())
 
     z_dict, temp_dict = pyart.retrieve.map_profile_to_gates(
         sonde.variables['tdry'][:], sonde.variables['alt'][:], radar)
-    texture = processing_code.get_texture(radar, **kwargs)
+    texture = processing_code.get_texture(radar)
 
     snr = pyart.retrieve.calculate_snr_from_reflectivity(radar)
 
@@ -73,7 +78,7 @@ def cmac(radar_file, sounde_file, alt=320.0, write_radar=False,
 
     my_fuzz, cats = processing_code.do_my_fuzz(radar)
     print(my_fuzz['notes'])
-    radar.add_field('gate_id', my_fuzz, 
+    radar.add_field('gate_id', my_fuzz,
                     replace_existing=True)
 
     print(radar.fields['gate_id']['notes'])
@@ -83,7 +88,7 @@ def cmac(radar_file, sounde_file, alt=320.0, write_radar=False,
         cat_dict.update(
             {pair_str.split(':')[1]:int(pair_str.split(':')[0])})
 
-    # sorted_cats = sorted(cat_dict.items(), key=operator.itemgetter(1))
+    sorted_cats = sorted(cat_dict.items(), key=operator.itemgetter(1))
 
     happy_gates = pyart.correct.GateFilter(radar)
     happy_gates.exclude_all()
@@ -96,9 +101,10 @@ def cmac(radar_file, sounde_file, alt=320.0, write_radar=False,
         grid_limits=((0, 15000.0), (-50000, 50000), (-50000, 50000)),
         fields=list(radar.fields.keys()), gridding_algo="map_gates_to_grid",
         weighting_function='BARNES', gatefilters=(happy_gates, ),
-        min_radius=200.0, )
+        min_radius=200.0, **kwargs)
 
     if write_radar:
         pyart.io.write_cfradial(filename_radar, radar)
+
     if write_grid:
         pyart.io.write_grid(filename_grid, grid)
