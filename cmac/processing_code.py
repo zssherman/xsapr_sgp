@@ -1,5 +1,5 @@
 """
-scipts.processing_code
+cmac.processing_code
 ======================
 Common core processing code across the AGU poster.
 
@@ -9,17 +9,17 @@ Common core processing code across the AGU poster.
 """
 
 import copy
+import os
+import time
 import datetime
 import fnmatch
 import netCDF4
 import numpy as np
-import os
 import pyart
 import skfuzzy as fuzz
-import time
 
 from csu_radartools import csu_kdp
-from scipy import ndimage, signal, integrate, interpolate
+from scipy import ndimage, signal, interpolate
 
 # Convolution code written by Bobby Jackson. Found at:
 # https://github.com/rcjackson/cmdv-rrm-anl/blob/cpol/notebooks/Texture-
@@ -30,11 +30,11 @@ def std_convoluted_radar(image, N, interval):
     # transform distribution from original interval to [-pi, pi]
     interval_max = interval[1]
     interval_min = interval[0]
-    half_width = (interval_max - interval_min) / 2.
+    half_width = (interval_max-interval_min) / 2.
     center = interval_min + half_width
 
     # Calculate parameters needed for angular std. dev
-    a = (np.asarray(image) - center) / (half_width) * np.pi
+    a = (np.asarray(image)-center) / (half_width) * np.pi
     im = a
     x = np.cos(im)
     y = np.sin(im)
@@ -43,15 +43,15 @@ def std_convoluted_radar(image, N, interval):
 
     # Calculate convolution
     kernel = np.ones((N, N))
-    xs = signal.convolve2d(x, kernel, mode="same")
-    ys = signal.convolve2d(y, kernel, mode="same")
-    ns = signal.convolve2d(ones, kernel, mode="same")
+    xs = signal.convolve2d(x, kernel, mode='same', boundary='symm')
+    ys = signal.convolve2d(y, kernel, mode='same', boundary='symm')
+    ns = N**2
 
     # Calculate norm over specified window.
-    xmean = xs/ns
-    ymean = ys/ns
-    norm = np.sqrt(xmean**2 + ymean**2)
-    std_dev = np.sqrt(-2 * np.log(norm)) * (half_width) / np.pi
+    xmean = xs / ns
+    ymean = ys / ns
+    norm = np.sqrt(xmean**2+ymean**2)
+    std_dev = np.sqrt(-2*np.log(norm)) * (half_width) / np.pi
     return ndimage.filters.median_filter(std_dev, size=(N, N))
 
 
@@ -92,7 +92,7 @@ def get_texture(radar, nyq=None):
     else:
         nyq = nyq
     start_time = time.time()
-    filtered_data = std_convoluted_radar(radar.fields['velocity']['data'], 
+    filtered_data = std_convoluted_radar(radar.fields['velocity']['data'],
                                          4, (-nyq, nyq))
     texture_field = pyart.config.get_metadata('velocity')
     texture_field['data'] = filtered_data
@@ -143,11 +143,12 @@ def cum_score_fuzzy_logic(radar, mbfs=None,
 
         mbfs = {'multi_trip': second_trip, 'rain' : rain, 'snow' :snow,
                 'no_scatter' : no_scatter, 'melting' : melting}
- 
+
     flds = radar.fields
     scores = {}
     for key in mbfs.keys():
-        if debug: print('Doing ' + key)
+        if debug:
+            print('Doing ' + key)
         this_score = np.zeros(
             flds[list(flds.keys())[0]]['data'].shape).flatten() * 0.0
         for MBF in mbfs[key].keys():
@@ -162,7 +163,8 @@ def cum_score_fuzzy_logic(radar, mbfs=None,
     if hard_const != None:
         # hard_const = [[class, field, (v1, v2)], ...]
         for this_const in hard_const:
-            if debug: print('Doing hard constraining ', this_const[0])
+            if debug:
+                print('Doing hard constraining ', this_const[0])
             key = this_const[0]
             const = this_const[1]
             fld_data = radar.fields[const]['data']
@@ -170,7 +172,8 @@ def cum_score_fuzzy_logic(radar, mbfs=None,
             upper = this_const[2][1]
             const_area = np.where(np.logical_and(fld_data >= lower,
                                                  fld_data <= upper))
-            if debug: print(const_area)
+            if debug:
+                print(const_area)
             scores[key][const_area] = 0.0
     stacked_scores = np.dstack([scores[key] for key in scores.keys()])
     #sum_of_scores = stacked_scores.sum(axis = 2)
@@ -184,7 +187,7 @@ def cum_score_fuzzy_logic(radar, mbfs=None,
     gid['standard_name'] = 'gate_id'
 
     strgs = ''
-    i=0
+    i = 0
     for key in scores.keys():
         strgs = strgs + str(i) + ':' + key + ','
         i = i + 1
@@ -252,10 +255,10 @@ def do_my_fuzz(radar):
     mbfs = {'multi_trip': second_trip, 'rain' : rain, 'snow' :snow,
             'no_scatter' : no_scatter, 'melting' : melting}
 
-    hard_const = [['melting' , 'sounding_temperature', (10, 100)],
+    hard_const = [['melting', 'sounding_temperature', (10, 100)],
                   ['multi_trip', 'height', (10000, 1000000)],
-                  ['melting' , 'sounding_temperature', (-10000, -2)],
-                  ['rain', 'sounding_temperature',(-1000, -5)],
+                  ['melting', 'sounding_temperature', (-10000, -2)],
+                  ['rain', 'sounding_temperature', (-1000, -5)],
                   ['melting', 'velocity_texture', (3, 300)]]
 
     gid_fld, cats = cum_score_fuzzy_logic(radar, mbfs=mbfs, debug=True,
@@ -323,7 +326,7 @@ def retrieve_qvp(radar, hts, flds=None):
     index = abs(radar.fixed_angle['data'] - desired_angle).argmin()
     ss = radar.sweep_start_ray_index['data'][index]
     se = radar.sweep_end_ray_index['data'][index]
-    mid = int((ss+se) / 2)
+    mid = int((ss+se)/2)
     z = radar.gate_altitude['data'][mid, :]
     qvp = {}
     for fld in flds:
